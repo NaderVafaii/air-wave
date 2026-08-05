@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Airwave — QR File Transfer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<style>
+  :root{
+    --bg: #0b0f0d;
+    --panel: #101613;
+    --line: #1f2b25;
+    --ink: #e7f3ec;
+    --dim: #7f9689;
+    --signal: #35e08a;
+    --signal-dim: #1e6b48;
+    --warn: #e0a935;
+    --mono: "SF Mono", "JetBrains Mono", "Consolas", monospace;
+    --sans: -apple-system, "Inter", "Segoe UI", sans-serif;
+  }
+  *{ box-sizing: border-box; }
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:var(--sans);
+    min-height:100vh;
+    display:flex; flex-direction:column; align-items:center;
+    padding: 32px 16px 64px;
+  }
+  .brand{ display:flex; align-items:baseline; gap:10px; margin-bottom: 6px; }
+  .brand .dot{
+    width:9px;height:9px;border-radius:50%;
+    background:var(--signal); box-shadow:0 0 10px var(--signal);
+    animation: pulse 1.8s ease-in-out infinite;
+  }
+  @keyframes pulse{ 0%,100%{opacity:1} 50%{opacity:.35} }
+  h1{
+    font-family: var(--mono); font-size: 15px; letter-spacing:.18em;
+    text-transform:uppercase; margin:0; font-weight:600;
+  }
+  .tagline{
+    font-family: var(--mono); font-size:11px; color:var(--dim);
+    letter-spacing:.06em; margin-bottom: 28px;
+  }
+  .switch{
+    display:flex; border:1px solid var(--line); border-radius:8px;
+    overflow:hidden; margin-bottom:24px;
+  }
+  .switch button{
+    font-family: var(--mono); font-size:12px; letter-spacing:.1em;
+    text-transform:uppercase; background:transparent; color:var(--dim);
+    border:none; padding:10px 22px; cursor:pointer;
+    transition: color .15s, background .15s;
+  }
+  .switch button.active{ background:var(--panel); color:var(--signal); }
+  .switch button:not(.active):hover{ color:var(--ink); }
+
+  .card{
+    width:100%; max-width:480px;
+    background:var(--panel); border:1px solid var(--line);
+    border-radius:14px; padding:24px;
+  }
+  .panel{ display:none; }
+  .panel.active{ display:block; }
+
+  .field{ margin-bottom:16px; }
+  .field label{
+    display:block; font-family:var(--mono); font-size:10.5px;
+    color:var(--dim); letter-spacing:.08em; text-transform:uppercase;
+    margin-bottom:6px;
+  }
+  input[type="file"]{
+    width:100%; font-family:var(--sans); font-size:13px; color:var(--ink);
+    background:#0d1310; border:1px dashed var(--line); border-radius:8px;
+    padding:14px; cursor:pointer;
+  }
+  input[type="number"]{
+    width:100%; background:#0d1310; border:1px solid var(--line);
+    color:var(--ink); font-family:var(--mono); font-size:13px;
+    padding:9px 10px; border-radius:6px;
+  }
+  .row2{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+
+  .fileinfo{
+    font-family:var(--mono); font-size:12px; color:var(--signal);
+    background:#0d1712; border:1px solid var(--signal-dim);
+    border-radius:8px; padding:10px 12px; margin-bottom:16px; display:none;
+    word-break:break-all;
+  }
+
+  button.action{
+    width:100%; font-family:var(--mono); font-size:12.5px;
+    letter-spacing:.1em; text-transform:uppercase;
+    background:var(--signal); color:#052012; border:none;
+    padding:13px; border-radius:8px; cursor:pointer; font-weight:700;
+    transition: filter .15s, transform .05s;
+  }
+  button.action:hover{ filter:brightness(1.08); }
+  button.action:active{ transform: scale(.99); }
+  button.action:disabled{ background:var(--line); color:var(--dim); cursor:not-allowed; }
+  button.ghost{
+    width:100%; margin-top:10px; font-family:var(--mono); font-size:11.5px;
+    letter-spacing:.08em; text-transform:uppercase;
+    background:transparent; color:var(--dim); border:1px solid var(--line);
+    padding:11px; border-radius:8px; cursor:pointer;
+  }
+  button.ghost:hover{ color:var(--ink); border-color:var(--dim); }
+
+  .qrwrap{
+    display:none; flex-direction:column; align-items:center;
+    margin-top:20px; padding-top:20px; border-top:1px solid var(--line);
+  }
+  #qrDisplay{
+    background:#fff; padding:16px; border-radius:10px; line-height:0;
+  }
+  .transmit-meta{
+    margin-top:14px; width:100%; text-align:center;
+    font-family:var(--mono); font-size:12px; color:var(--dim);
+  }
+  .transmit-meta b{ color:var(--signal); }
+  .progressbar{
+    width:100%; height:4px; background:var(--line); border-radius:2px;
+    overflow:hidden; margin-top:10px;
+  }
+  .progressbar > div{
+    height:100%; background:var(--signal); width:0%;
+  }
+
+  video{
+    width:100%; border-radius:10px; background:#000;
+    display:none; border:1px solid var(--line);
+  }
+  canvas{ display:none; }
+
+  .scanstatus{
+    margin-top:14px; font-family:var(--mono); font-size:12px; color:var(--dim);
+    text-align:center; line-height:1.8;
+  }
+  .scanstatus b{ color:var(--signal); }
+
+  .grid{
+    display:flex; flex-wrap:wrap; gap:3px; margin-top:14px;
+    max-height:120px; overflow-y:auto; padding:8px;
+    background:#0d1310; border:1px solid var(--line); border-radius:8px;
+  }
+  .grid .cell{ width:9px; height:9px; border-radius:2px; background:var(--line); }
+  .grid .cell.got{ background:var(--signal); }
+
+  .downloadLink{
+    display:none; margin-top:16px; text-align:center; text-decoration:none;
+    font-family:var(--mono); font-size:12.5px; letter-spacing:.08em;
+    text-transform:uppercase; background:var(--signal); color:#052012;
+    padding:13px; border-radius:8px; font-weight:700;
+  }
+  .hint{
+    font-family:var(--mono); font-size:10.5px; color:var(--dim);
+    line-height:1.6; margin-top:18px; padding-top:16px;
+    border-top:1px solid var(--line);
+  }
+  .errbox{
+    display:none; font-family:var(--mono); font-size:11.5px;
+    color:var(--warn); border:1px solid var(--warn); border-radius:8px;
+    padding:10px 12px; margin-top:14px; line-height:1.5;
+  }
+</style>
+</head>
+<body>
+
+  <div class="brand"><span class="dot"></span><h1>Airwave</h1></div>
+  <div class="tagline">file transfer over blinking light — no network required</div>
+
+  <div class="switch">
+    <button id="tabSend" class="active">Send</button>
+    <button id="tabReceive">Receive</button>
+  </div>
+
+  <!-- SEND -->
+  <div class="card panel active" id="panelSend">
+    <div class="field">
+      <label>File</label>
+      <input type="file" id="filePicker">
+    </div>
+    <div class="fileinfo" id="fileInfo"></div>
+
+    <div class="row2">
+      <div class="field">
+        <label>Chunk bytes</label>
+        <input type="number" id="chunkSize" value="120" min="30" max="500" step="10">
+      </div>
+      <div class="field">
+        <label>Frame ms</label>
+        <input type="number" id="frameMs" value="400" min="150" max="3000" step="50">
+      </div>
+    </div>
+
+    <button class="action" id="startSend" disabled>Start transmitting</button>
+    <div class="errbox" id="sendErr"></div>
+
+    <div class="qrwrap" id="qrwrap">
+      <div id="qrDisplay"></div>
+      <div class="transmit-meta">
+        Frame <b id="frameNow">0</b> / <span id="frameTotal">0</span>
+        &nbsp;·&nbsp; loop <b id="loopCount">0</b>
+      </div>
+      <div class="progressbar"><div id="frameBar"></div></div>
+      <button class="ghost" id="stopSend">Stop transmitting</button>
+    </div>
+
+    <div class="hint">
+      Keep chunk bytes small (100–150) — denser codes are much harder for a
+      phone camera to read from a screen. If the receiver misses a lot of
+      frames, raise frame ms. The loop repeats until every chunk lands.
+    </div>
+  </div>
+
+  <!-- RECEIVE -->
+  <div class="card panel" id="panelReceive">
+    <button class="action" id="startCamera">Open camera</button>
+    <video id="video" playsinline muted autoplay></video>
+    <canvas id="canvas"></canvas>
+
+    <div class="scanstatus" id="scanStatus" style="display:none">
+      <span id="scanState">Waiting for signal…</span><br>
+      Receiving <b id="fileNameDisplay">—</b><br>
+      <b id="gotCount">0</b> / <span id="totalCount">?</span> chunks
+      &nbsp;·&nbsp; camera reads: <b id="readCount">0</b>
+    </div>
+    <div class="grid" id="chunkGrid" style="display:none"></div>
+
+    <a class="downloadLink" id="downloadLink">Download file</a>
+    <div class="errbox" id="recvErr"></div>
+
+    <div class="hint">
+      Fill most of the camera view with the QR code and hold steady — about
+      20–40&nbsp;cm from the screen usually focuses best. "Camera reads" ticks
+      up every time a code is decoded; if it stays at 0, move closer or
+      slow down the sender.
+    </div>
+  </div>
+
+<script>
+(function(){
+  // ---------- tab switching ----------
+  const tabSend = document.getElementById('tabSend');
+  const tabReceive = document.getElementById('tabReceive');
+  const panelSend = document.getElementById('panelSend');
+  const panelReceive = document.getElementById('panelReceive');
+
+  tabSend.onclick = () => {
+    tabSend.classList.add('active'); tabReceive.classList.remove('active');
+    panelSend.classList.add('active'); panelReceive.classList.remove('active');
+    stopCamera();
+  };
+  tabReceive.onclick = () => {
+    tabReceive.classList.add('active'); tabSend.classList.remove('active');
+    panelReceive.classList.add('active'); panelSend.classList.remove('active');
+    stopSending();
+  };
+
+  // ---------- helpers ----------
+  function bufToBase64(u8){
+    let binary = '';
+    for (let i = 0; i < u8.length; i++) binary += String.fromCharCode(u8[i]);
+    return btoa(binary);
+  }
+  function base64ToBuf(b64){
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+  function randomId(){
+    return Date.now().toString(36).slice(-4) + Math.random().toString(36).slice(2, 6);
+  }
+
+  // Compact payload format (much less dense than JSON):
+  //   meta frame:  M|id|totalChunks|chunkSize|fileSize|mime|fileName
+  //   data frame:  D|id|index|totalChunks|base64
+  // fileName goes last so it may safely contain "|".
+
+  // ================= SENDER =================
+  const filePicker = document.getElementById('filePicker');
+  const fileInfo = document.getElementById('fileInfo');
+  const startSendBtn = document.getElementById('startSend');
+  const stopSendBtn = document.getElementById('stopSend');
+  const qrwrap = document.getElementById('qrwrap');
+  const chunkSizeInput = document.getElementById('chunkSize');
+  const frameMsInput = document.getElementById('frameMs');
+  const frameNowEl = document.getElementById('frameNow');
+  const frameTotalEl = document.getElementById('frameTotal');
+  const loopCountEl = document.getElementById('loopCount');
+  const frameBar = document.getElementById('frameBar');
+  const sendErr = document.getElementById('sendErr');
+
+  let selectedFile = null;
+  let qrObj = null;
+  let sendTimer = null;
+  let frames = [];
+  let frameIdx = 0;
+  let loops = 0;
+
+  filePicker.onchange = () => {
+    selectedFile = filePicker.files[0] || null;
+    if (selectedFile) {
+      fileInfo.style.display = 'block';
+      fileInfo.textContent = selectedFile.name + '  ·  ' + (selectedFile.size/1024).toFixed(1) + ' KB';
+      startSendBtn.disabled = false;
+    } else {
+      fileInfo.style.display = 'none';
+      startSendBtn.disabled = true;
+    }
+    sendErr.style.display = 'none';
+  };
+
+  startSendBtn.onclick = async () => {
+    if (!selectedFile) return;
+    sendErr.style.display = 'none';
+    const chunkSize = Math.max(30, parseInt(chunkSizeInput.value, 10) || 120);
+    const frameMs = Math.max(150, parseInt(frameMsInput.value, 10) || 400);
+
+    const buf = new Uint8Array(await selectedFile.arrayBuffer());
+    const total = Math.ceil(buf.length / chunkSize) || 1;
+    const id = randomId();
+    const mime = selectedFile.type || 'application/octet-stream';
+
+    frames = [];
+    frames.push(['M', id, total, chunkSize, buf.length, mime, selectedFile.name].join('|'));
+    for (let i = 0; i < total; i++) {
+      const chunk = buf.subarray(i * chunkSize, Math.min(buf.length, (i + 1) * chunkSize));
+      frames.push(['D', id, i, total, bufToBase64(chunk)].join('|'));
+    }
+
+    frameTotalEl.textContent = frames.length;
+    frameIdx = 0;
+    loops = 0;
+    loopCountEl.textContent = '0';
+
+    // QR size: as large as fits in the card
+    const qrSize = Math.min(380, Math.max(240, window.innerWidth - 110));
+    document.getElementById('qrDisplay').innerHTML = '';
+    qrObj = new QRCode(document.getElementById('qrDisplay'), {
+      width: qrSize, height: qrSize,
+      correctLevel: QRCode.CorrectLevel.M
+    });
+
+    // verify the payloads actually fit in a QR code before starting
+    try {
+      qrObj.makeCode(frames[frames.length - 1]);
+      qrObj.makeCode(frames[0]);
+    } catch (e) {
+      sendErr.textContent = 'Chunk size too large to encode — lower "chunk bytes" and try again.';
+      sendErr.style.display = 'block';
+      return;
+    }
+
+    qrwrap.style.display = 'flex';
+    startSendBtn.style.display = 'none';
+
+    clearInterval(sendTimer);
+    sendTimer = setInterval(renderNextFrame, frameMs);
+    renderNextFrame();
+  };
+
+  function renderNextFrame(){
+    try { qrObj.makeCode(frames[frameIdx]); } catch (e) { /* skip unencodable frame */ }
+    frameNowEl.textContent = frameIdx + 1;
+    frameBar.style.width = (((frameIdx + 1) / frames.length) * 100) + '%';
+    frameIdx++;
+    if (frameIdx >= frames.length) {
+      frameIdx = 0;
+      loops++;
+      loopCountEl.textContent = loops;
+    }
+  }
+
+  function stopSending(){
+    clearInterval(sendTimer);
+    sendTimer = null;
+    qrwrap.style.display = 'none';
+    startSendBtn.style.display = 'block';
+  }
+  stopSendBtn.onclick = stopSending;
+
+  // ================= RECEIVER =================
+  const startCameraBtn = document.getElementById('startCamera');
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const scanStatus = document.getElementById('scanStatus');
+  const scanState = document.getElementById('scanState');
+  const fileNameDisplay = document.getElementById('fileNameDisplay');
+  const gotCountEl = document.getElementById('gotCount');
+  const totalCountEl = document.getElementById('totalCount');
+  const readCountEl = document.getElementById('readCount');
+  const chunkGrid = document.getElementById('chunkGrid');
+  const downloadLink = document.getElementById('downloadLink');
+  const recvErr = document.getElementById('recvErr');
+
+  const MAX_SCAN_DIM = 900;   // downscale camera frames for faster decoding
+
+  let stream = null;
+  let scanRAF = null;
+  let currentId = null;
+  let meta = null;
+  let chunks = new Map();
+  let completed = false;
+  let reads = 0;
+  let lastRaw = null;
+
+  startCameraBtn.onclick = async () => {
+    resetReceiveState();
+    recvErr.style.display = 'none';
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      });
+    } catch (e) {
+      recvErr.textContent = 'Could not access camera: ' + e.message +
+        '. Camera needs HTTPS (or localhost) and permission.';
+      recvErr.style.display = 'block';
+      return;
+    }
+    video.srcObject = stream;
+    video.style.display = 'block';
+    try { await video.play(); } catch (e) {}
+    startCameraBtn.style.display = 'none';
+    scanStatus.style.display = 'block';
+    chunkGrid.style.display = 'flex';
+    scanRAF = requestAnimationFrame(scanLoop);
+  };
+
+  function stopCamera(){
+    if (scanRAF) cancelAnimationFrame(scanRAF);
+    scanRAF = null;
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    video.pause();
+    video.srcObject = null;
+    video.style.display = 'none';
+    startCameraBtn.style.display = 'block';
+  }
+
+  function resetReceiveState(){
+    currentId = null; meta = null; chunks = new Map(); completed = false;
+    reads = 0; lastRaw = null;
+    gotCountEl.textContent = '0'; totalCountEl.textContent = '?';
+    readCountEl.textContent = '0';
+    fileNameDisplay.textContent = '—';
+    scanState.textContent = 'Waiting for signal…';
+    chunkGrid.innerHTML = '';
+    downloadLink.style.display = 'none';
+  }
+
+  function scanLoop(){
+    if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
+      // downscale for speed — dense-enough resolution, much faster decode
+      const scale = Math.min(1, MAX_SCAN_DIM / Math.max(video.videoWidth, video.videoHeight));
+      const w = Math.round(video.videoWidth * scale);
+      const h = Math.round(video.videoHeight * scale);
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w; canvas.height = h;
+      }
+      ctx.drawImage(video, 0, 0, w, h);
+      const imgData = ctx.getImageData(0, 0, w, h);
+      const code = jsQR(imgData.data, w, h, { inversionAttempts: 'dontInvert' });
+      if (code && code.data) {
+        reads++;
+        readCountEl.textContent = reads;
+        if (code.data !== lastRaw) {
+          lastRaw = code.data;
+          handlePayload(code.data);
+        }
+      }
+    }
+    scanRAF = requestAnimationFrame(scanLoop);
+  }
+
+  function ensureGrid(total){
+    if (chunkGrid.children.length === total) return;
+    chunkGrid.innerHTML = '';
+    for (let i = 0; i < total; i++) {
+      const c = document.createElement('div');
+      c.className = 'cell';
+      c.id = 'cell-' + i;
+      chunkGrid.appendChild(c);
+    }
+    chunks.forEach((_, i) => {
+      const c = document.getElementById('cell-' + i);
+      if (c) c.classList.add('got');
+    });
+  }
+
+  function handlePayload(raw){
+    const type = raw[0];
+    if ((type !== 'M' && type !== 'D') || raw[1] !== '|') return;
+
+    if (type === 'M') {
+      // M|id|total|chunkSize|fileSize|mime|fileName   (name may contain "|")
+      const p = raw.split('|');
+      if (p.length < 7) return;
+      const id = p[1];
+      switchTransmission(id);
+      meta = {
+        c: parseInt(p[2], 10),
+        cs: parseInt(p[3], 10),
+        s: parseInt(p[4], 10),
+        m: p[5],
+        n: p.slice(6).join('|')
+      };
+      if (!meta.c || !meta.cs || isNaN(meta.s)) { meta = null; return; }
+      fileNameDisplay.textContent = meta.n;
+      totalCountEl.textContent = meta.c;
+      scanState.textContent = 'Receiving…';
+      ensureGrid(meta.c);
+      checkComplete();
+    } else {
+      // D|id|index|total|base64
+      const p = raw.split('|');
+      if (p.length !== 5) return;
+      const id = p[1];
+      const i = parseInt(p[2], 10);
+      const total = parseInt(p[3], 10);
+      if (isNaN(i) || !total) return;
+      switchTransmission(id);
+      if (!chunks.has(i)) {
+        let data;
+        try { data = base64ToBuf(p[4]); } catch (e) { return; }
+        chunks.set(i, data);
+        ensureGrid(total);
+        const cell = document.getElementById('cell-' + i);
+        if (cell) cell.classList.add('got');
+      }
+      totalCountEl.textContent = total;
+      gotCountEl.textContent = chunks.size;
+      if (scanState.textContent === 'Waiting for signal…') {
+        scanState.textContent = 'Receiving…';
+      }
+      checkComplete(total);
+    }
+  }
+
+  function switchTransmission(id){
+    if (id === currentId) return;
+    currentId = id;
+    meta = null;
+    chunks = new Map();
+    completed = false;
+    downloadLink.style.display = 'none';
+    chunkGrid.innerHTML = '';
+    gotCountEl.textContent = '0';
+  }
+
+  function checkComplete(totalHint){
+    if (completed) return;
+    const total = meta ? meta.c : totalHint;
+    if (!total || chunks.size < total) return;
+    if (!meta) {
+      scanState.textContent = 'All chunks in — waiting for header frame…';
+      return; // need the M frame for name/size; it loops around
+    }
+    finishTransfer();
+  }
+
+  function finishTransfer(){
+    const out = new Uint8Array(meta.s);
+    for (let i = 0; i < meta.c; i++) {
+      const part = chunks.get(i);
+      if (!part) return;
+      out.set(part, i * meta.cs);
+    }
+    completed = true;
+    scanState.textContent = 'Complete ✓';
+    const blob = new Blob([out], { type: meta.m || 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    downloadLink.href = url;
+    downloadLink.download = meta.n || 'received-file';
+    downloadLink.textContent = 'Download ' + meta.n;
+    downloadLink.style.display = 'block';
+  }
+})();
+</script>
+</body>
+</html>
